@@ -11,6 +11,6 @@ public class WebViewHelper(
 	}
 
     public suspend fun getUrlValue(url: String, value: String): String? {
-        return context.evaluateJs("$SCHEME_HTTPS://$url", "new URLSearchParams(window.location.search).get('$value');")
+        return context.evaluateJs(url, "new URLSearchParams(window.location.search).get('$value');")
     }
 }
