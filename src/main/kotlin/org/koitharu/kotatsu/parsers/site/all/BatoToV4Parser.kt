@@ -243,10 +243,17 @@ internal class BatoToV4Parser(context: MangaLoaderContext) :
 			put("variables", variables)
 		}
 
+		val customClient = context.httpClient.newBuilder()
+			.apply {
+				interceptors().clear()
+			}
+			.build()
+
+		val bodyString = payload.toString()
 		val mediaType = "application/json; charset=utf-8".toMediaType()
-		val requestBody = payload.toString().toRequestBody(mediaType)
+		val requestBody = bodyString.toRequestBody(mediaType)
 		val headers = getRequestHeaders().newBuilder()
-			.set("Content-Type", "application/json")
+			.set("Content-Type", "application/json; charset=utf-8")
 			.removeAll("Content-Encoding")
 			.removeAll("Accept-Encoding")
 			.build()
@@ -258,7 +265,13 @@ internal class BatoToV4Parser(context: MangaLoaderContext) :
 			.tag(MangaParserSource::class.java, source)
 			.build()
 
-		val response = context.httpClient.newCall(request).await()
+		val response = customClient.newCall(request).await()
+		if (!response.isSuccessful) {
+			val body = response.body.string()
+			response.close()
+			throw IllegalStateException("HTTP ${response.code}: $body")
+		}
+
 		val json = response.parseJson()
 		json.optJSONArray("errors")?.let {
 			if (it.length() != 0) {
