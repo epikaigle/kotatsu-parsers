@@ -55,20 +55,20 @@ internal class CMangaParser(context: MangaLoaderContext) :
 		get() = domain
 
 	override suspend fun isAuthorized(): Boolean =
-		context.cookieJar.getCookies(domain).any { it.name == "user_security" && !it.value.isEmpty() }
+		context.cookieJar.getCookies(domain).any { it.name == "user_security" && it.value.isEmpty() }
 
 	override suspend fun getUsername(): String {
-		val userId = webClient.httpGet("https://$domain").parseRaw()
-			.substringAfter("token_user = ")
-			.substringBefore(';')
-			.trim()
-		if (userId.isEmpty() || userId == "0") throw AuthRequiredException(
-			source,
-			IllegalStateException("No userId found"),
-		)
-		return webClient.httpGet("/api/user_info?user=$userId".toAbsoluteUrl(domain)).parseJson()
-			.parseJson("info")
-			.getString("name")
+		val rawCookie = context.cookieJar.getCookies(domain).any {
+			it.name.equals("user_security", true) && !it.value.isEmpty()
+		}
+
+		val info = JSONObject(rawCookie).getJSONObject("info")
+
+		if (info.isEmpty) {
+			throw AuthRequiredException(source, IllegalStateException("No user found!"))
+		}
+
+		return info.getString("name")
 	}
 
 	override suspend fun getDetails(manga: Manga): Manga {
