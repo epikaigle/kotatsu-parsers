@@ -63,11 +63,9 @@ internal abstract class MangaboxParser(
 		} else {
 			url.addPathSegment("genre")
 			if (filter.tags.isEmpty()) {
-				url.addPathSegment("genre")
 				url.addPathSegment("all")
 			} else {
 				val tags = filter.tags.first()
-				url.addPathSegment("genre")
 				url.addPathSegment(tags.key)
 			}
 		}
