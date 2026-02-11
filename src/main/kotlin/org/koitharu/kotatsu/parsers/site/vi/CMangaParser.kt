@@ -58,16 +58,20 @@ internal class CMangaParser(context: MangaLoaderContext) :
 		context.cookieJar.getCookies(domain).any { it.name == "user_security" && it.value.isEmpty() }
 
 	override suspend fun getUsername(): String {
-		val rawCookie = context.cookieJar.getCookies(domain).any {
-			it.name.equals("user_security", true) && !it.value.isEmpty()
-		}
+		val cookieValue = context.cookieJar.getCookies(domain)
+			.firstOrNull { it.name.equals("user_security", true) }
+			?.value
 
-		val info = JSONObject(rawCookie).getJSONObject("info")
-		if (info.isEmpty) {
+		val name = cookieValue?.let {
+			val json = JSONObject(it)
+			json.getJSONObject("info").optString("name", "")
+		}.orEmpty()
+
+		if (name.isBlank()) {
 			throw AuthRequiredException(source, IllegalStateException("No user found!"))
 		}
 
-		return info.getString("name")
+		return name
 	}
 
 	override suspend fun getDetails(manga: Manga): Manga {
@@ -187,15 +191,15 @@ internal class CMangaParser(context: MangaLoaderContext) :
 	}
 
 	override suspend fun getPages(chapter: MangaChapter): List<MangaPage> {
-		val cookie = JSONObject(
-			context.cookieJar.getCookies(domain).any {
-				it.name.equals("user_security", true)
-			}
-		)
+		val cookieValue = context.cookieJar.getCookies(domain)
+			.firstOrNull { it.name.equals("user_security", true) }
+			?.value
 
-		val userID = cookie.optString("id", "0")
-		val token = cookie.optString("token", "0")
+		val cookieJson = cookieValue?.let { JSONObject(it) }
+		val userID = cookieJson?.optString("id", "0") ?: "0"
+		val token = cookieJson?.optString("token", "0") ?: "0"
 		val currentTimestamp = System.currentTimeMillis()
+
 		val url = urlBuilder().addPathSegment("api").addPathSegment("chapter_image")
 			.addQueryParameter("chapter", chapter.url.substringAfterLast('-'))
 			.addQueryParameter("v", 0.toString())
