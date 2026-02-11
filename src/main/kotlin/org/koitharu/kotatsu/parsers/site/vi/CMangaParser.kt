@@ -209,8 +209,9 @@ internal class CMangaParser(context: MangaLoaderContext) :
 			.build()
 
 		val pageResponse = webClient.httpGet(url).parseJson()
+		val info = pageResponse.getJSONObject("data")
 
-		if (pageResponse.isLocked()) {
+		if (pageResponse.isLocked() || info.isLocked()) {
 			throw IllegalStateException("This chapter is locked, you would need to buy it and login!")
 		}
 
