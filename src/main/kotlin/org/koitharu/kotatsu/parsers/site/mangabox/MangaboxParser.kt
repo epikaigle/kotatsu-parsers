@@ -38,7 +38,7 @@ internal abstract class MangaboxParser(
 		availableTags = fetchAvailableTags(),
 		availableStates = EnumSet.of(
 			MangaState.ONGOING,
-			MangaState.FINISHED
+			MangaState.FINISHED,
 		),
 	)
 
@@ -50,39 +50,68 @@ internal abstract class MangaboxParser(
 
 	protected open val listUrl = "/genre"
 	protected open val searchUrl = "/search/story/"
+	protected open val itemSelector = "div.search-story-item, a.list-story-item"
 
 	override suspend fun getListPage(page: Int, order: SortOrder, filter: MangaListFilter): List<Manga> {
-		val url: String
-		val itemSelector: String
+		val url = urlBuilder()
 
 		if (!filter.query.isNullOrEmpty()) {
-			// Search mode
-			val query = filter.query.replace(" ", "_")
-			url = "https://$domain$searchUrl$query?page=$page"
-			itemSelector = "div.search-story-item"
+			val query = filter.query.splitByWhitespace().joinToString("_")
+			url.addPathSegment("search")
+			url.addPathSegment("story")
+			url.addPathSegment(query)
 		} else {
-			// Browse mode
-			val tag = filter.tags.oneOrThrowIfMany()
-			val state = filter.states.oneOrThrowIfMany()
-
-			val sortParam = when (order) {
-				SortOrder.POPULARITY -> "topview"
-				SortOrder.NEWEST -> "newest"
-				else -> "latest"
+			url.addPathSegment("genre")
+			if (filter.tags.isEmpty()) {
+				url.addPathSegment("genre")
+				url.addPathSegment("all")
+			} else {
+				val tags = filter.tags.first()
+				url.addPathSegment("genre")
+				url.addPathSegment(tags.key)
 			}
-
-			val stateParam = when (state) {
-				MangaState.ONGOING -> "ongoing"
-				MangaState.FINISHED -> "completed"
-				else -> "all"
-			}
-
-			val tagSlug = tag?.key ?: "all"
-			url = "https://$domain$listUrl/$tagSlug?type=$sortParam&state=$stateParam&page=$page"
-			itemSelector = "a.list-story-item"
 		}
 
-		val doc = webClient.httpGet(url).parseHtml()
+		when (order) {
+			SortOrder.NEWEST -> {
+				if (filter.states.isEmpty()) {
+					url.addQueryParameter("filter", 1.toString())
+				} else {
+					val state = filter.states.oneOrThrowIfMany()
+					when (state) {
+						MangaState.FINISHED -> url.addQueryParameter("filter", 2.toString())
+						MangaState.ONGOING -> url.addQueryParameter("filter", 3.toString())
+						else -> url.addQueryParameter("filter", 1.toString())
+					}
+				}
+			}
+			SortOrder.POPULARITY -> {
+				if (filter.states.isEmpty()) {
+					url.addQueryParameter("filter", 7.toString())
+				} else {
+					val state = filter.states.oneOrThrowIfMany()
+					when (state) {
+						MangaState.FINISHED -> url.addQueryParameter("filter", 8.toString())
+						MangaState.ONGOING -> url.addQueryParameter("filter", 9.toString())
+						else -> url.addQueryParameter("filter", 7.toString())
+					}
+				}
+			}
+			else -> {
+				if (filter.states.isEmpty()) {
+					url.addQueryParameter("filter", 4.toString())
+				} else {
+					val state = filter.states.oneOrThrowIfMany()
+					when (state) {
+						MangaState.FINISHED -> url.addQueryParameter("filter", 5.toString())
+						MangaState.ONGOING -> url.addQueryParameter("filter", 6.toString())
+						else -> url.addQueryParameter("filter", 4.toString())
+					}
+				}
+			}
+		}
+
+		val doc = webClient.httpGet(url.build()).parseHtml()
 
 		return doc.select(itemSelector).map { el ->
 			val a = if (el.tagName() == "a") el else el.selectFirstOrThrow("a")
@@ -100,25 +129,6 @@ internal abstract class MangaboxParser(
 				state = null,
 				source = source,
 				contentRating = null,
-			)
-		}
-	}
-
-	protected open suspend fun fetchAvailableTags(): Set<MangaTag> {
-		val doc = webClient.httpGet("https://$domain/").parseHtml()
-		return doc.select("a[href*='/genre/']").filterNot { a ->
-			a.attr("href").contains("?type") ||
-			a.attr("href").contains("all")
-		}.mapNotNullToSet { a ->
-			val href = a.attr("href")
-			val key = href.substringAfterLast("/genre/")
-				.substringBefore("?")
-				.substringBefore("/")
-			if (key.isEmpty()) return@mapNotNullToSet null
-			MangaTag(
-				key = key,
-				title = a.text().toTitleCase(),
-				source = source,
 			)
 		}
 	}
@@ -217,6 +227,25 @@ internal abstract class MangaboxParser(
 				id = generateUid(url),
 				url = url,
 				preview = null,
+				source = source,
+			)
+		}
+	}
+
+	protected open suspend fun fetchAvailableTags(): Set<MangaTag> {
+		val doc = webClient.httpGet("https://$domain/").parseHtml()
+		return doc.select("a[href*='/genre/']").filterNot { a ->
+			a.attr("href").contains("?type") ||
+				a.attr("href").contains("all")
+		}.mapNotNullToSet { a ->
+			val href = a.attr("href")
+			val key = href.substringAfterLast("/genre/")
+				.substringBefore("?")
+				.substringBefore("/")
+			if (key.isEmpty()) return@mapNotNullToSet null
+			MangaTag(
+				key = key,
+				title = a.text().toTitleCase(),
 				source = source,
 			)
 		}
