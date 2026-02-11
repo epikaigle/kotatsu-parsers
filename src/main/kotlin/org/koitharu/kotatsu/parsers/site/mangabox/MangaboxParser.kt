@@ -24,19 +24,22 @@ internal abstract class MangaboxParser(
 	}
 
 	override val availableSortOrders: Set<SortOrder> = EnumSet.of(
-		SortOrder.UPDATED,
-		SortOrder.POPULARITY,
-		SortOrder.NEWEST,
+		SortOrder.UPDATED, // latest
+		SortOrder.POPULARITY, // top read
+		SortOrder.NEWEST, // newest
 	)
 
 	override val filterCapabilities = MangaListFilterCapabilities(
 		isSearchSupported = true,
-		isMultipleTagsSupported = false,
+		isSearchWithFiltersSupported = true,
 	)
 
 	override suspend fun getFilterOptions() = MangaListFilterOptions(
 		availableTags = fetchAvailableTags(),
-		availableStates = EnumSet.of(MangaState.ONGOING, MangaState.FINISHED),
+		availableStates = EnumSet.of(
+			MangaState.ONGOING,
+			MangaState.FINISHED
+		),
 	)
 
 	@JvmField
@@ -103,13 +106,18 @@ internal abstract class MangaboxParser(
 
 	protected open suspend fun fetchAvailableTags(): Set<MangaTag> {
 		val doc = webClient.httpGet("https://$domain/").parseHtml()
-		return doc.select("a[href*='/genre/']").mapNotNullToSet { a ->
+		return doc.select("a[href*='/genre/']").filterNot { a ->
+			a.attr("href").contains("?type") ||
+			a.attr("href").contains("all")
+		}.mapNotNullToSet { a ->
 			val href = a.attr("href")
-			val key = href.substringAfterLast("/genre/").substringBefore("?").substringBefore("/")
-			if (key.isEmpty() || key == "all") return@mapNotNullToSet null
+			val key = href.substringAfterLast("/genre/")
+				.substringBefore("?")
+				.substringBefore("/")
+			if (key.isEmpty()) return@mapNotNullToSet null
 			MangaTag(
 				key = key,
-				title = a.text().trim().toTitleCase(),
+				title = a.text().toTitleCase(),
 				source = source,
 			)
 		}
