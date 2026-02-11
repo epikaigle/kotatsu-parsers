@@ -5,12 +5,39 @@ import kotlinx.coroutines.coroutineScope
 import org.koitharu.kotatsu.parsers.MangaLoaderContext
 import org.koitharu.kotatsu.parsers.config.ConfigKey
 import org.koitharu.kotatsu.parsers.core.PagedMangaParser
-import org.koitharu.kotatsu.parsers.model.*
-import org.koitharu.kotatsu.parsers.util.*
-import org.koitharu.kotatsu.parsers.util.json.getStringOrNull
-import org.koitharu.kotatsu.parsers.util.json.mapJSONIndexed
+import org.koitharu.kotatsu.parsers.model.Manga
+import org.koitharu.kotatsu.parsers.model.MangaChapter
+import org.koitharu.kotatsu.parsers.model.MangaListFilter
+import org.koitharu.kotatsu.parsers.model.MangaListFilterCapabilities
+import org.koitharu.kotatsu.parsers.model.MangaListFilterOptions
+import org.koitharu.kotatsu.parsers.model.MangaPage
+import org.koitharu.kotatsu.parsers.model.MangaParserSource
+import org.koitharu.kotatsu.parsers.model.MangaState
+import org.koitharu.kotatsu.parsers.model.MangaTag
+import org.koitharu.kotatsu.parsers.model.RATING_UNKNOWN
+import org.koitharu.kotatsu.parsers.model.SortOrder
+import org.koitharu.kotatsu.parsers.util.attrAsRelativeUrl
+import org.koitharu.kotatsu.parsers.util.generateUid
+import org.koitharu.kotatsu.parsers.util.json.getFloatOrDefault
+import org.koitharu.kotatsu.parsers.util.mapChapters
+import org.koitharu.kotatsu.parsers.util.mapNotNullToSet
+import org.koitharu.kotatsu.parsers.util.mapToSet
+import org.koitharu.kotatsu.parsers.util.oneOrThrowIfMany
+import org.koitharu.kotatsu.parsers.util.parseHtml
+import org.koitharu.kotatsu.parsers.util.parseJson
+import org.koitharu.kotatsu.parsers.util.parseSafe
+import org.koitharu.kotatsu.parsers.util.requireSrc
+import org.koitharu.kotatsu.parsers.util.selectFirstOrThrow
+import org.koitharu.kotatsu.parsers.util.splitByWhitespace
+import org.koitharu.kotatsu.parsers.util.src
+import org.koitharu.kotatsu.parsers.util.toAbsoluteUrl
+import org.koitharu.kotatsu.parsers.util.toRelativeUrl
+import org.koitharu.kotatsu.parsers.util.toTitleCase
+import org.koitharu.kotatsu.parsers.util.urlBuilder
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.EnumSet
+import java.util.Locale
+import java.util.TimeZone
 
 internal abstract class MangaboxParser(
 	context: MangaLoaderContext,
@@ -22,6 +49,10 @@ internal abstract class MangaboxParser(
 		super.onCreateConfig(keys)
 		keys.add(userAgentKey)
 	}
+
+	override fun getRequestHeaders() = super.getRequestHeaders().newBuilder()
+		.add("referer", "https://$domain/")
+		.build()
 
 	override val availableSortOrders: Set<SortOrder> = EnumSet.of(
 		SortOrder.UPDATED, // latest
@@ -56,7 +87,7 @@ internal abstract class MangaboxParser(
 		val url = urlBuilder()
 
 		if (!filter.query.isNullOrEmpty()) {
-			val query = filter.query.splitByWhitespace().joinToString("_")
+			val query = filter.query.filterQuery()
 			url.addPathSegment("search")
 			url.addPathSegment("story")
 			url.addPathSegment(query)
@@ -135,10 +166,10 @@ internal abstract class MangaboxParser(
 	protected open val selectState = ".info-status, li:contains(status), td:containsOwn(status) + td"
 	protected open val selectAut = "a[href*='/author/'], li:contains(author) a, td:contains(author) + td a"
 	protected open val selectTag = "a[href*='/genre/']"
+	protected open val selectRating = ".comic-info-wrap .info-wrap .rating"
 
 	override suspend fun getDetails(manga: Manga): Manga = coroutineScope {
 		val doc = webClient.httpGet(manga.url.toAbsoluteUrl(domain)).parseHtml()
-
 		val slug = manga.url.removeSuffix("/").substringAfterLast("/")
 		val chaptersDeferred = async { fetchChapters(slug) }
 
@@ -165,20 +196,19 @@ internal abstract class MangaboxParser(
 			if (key.isEmpty() || key == "all") return@mapNotNullToSet null
 			MangaTag(
 				key = key,
-				title = a.text().trim().toTitleCase(),
+				title = a.text().toTitleCase(),
 				source = source,
 			)
 		}
-
-		// Authors
-		val authors = doc.select(selectAut).mapToSet { it.text().trim() }
 
 		manga.copy(
 			description = desc,
 			state = state ?: manga.state,
 			tags = tags,
-			authors = authors,
+			authors = doc.select(selectAut).mapToSet { it.text() },
 			chapters = chaptersDeferred.await(),
+			rating = doc.select(selectRating).attr("data-default")
+				.toFloatOrNull()?.div(5f) ?: RATING_UNKNOWN
 		)
 	}
 
@@ -190,16 +220,15 @@ internal abstract class MangaboxParser(
 			return emptyList()
 		}
 
-		val data = json.getJSONObject("data")
-		val chaptersArray = data.getJSONArray("chapters")
+		val chapsArr = json.getJSONObject("data").getJSONArray("chapters")
 		val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'", Locale.US)
-		dateFormat.timeZone = TimeZone.getTimeZone("UTC")
+			dateFormat.timeZone = TimeZone.getTimeZone("UTC")
 
-		return chaptersArray.mapJSONIndexed { i, item ->
+		return chapsArr.mapChapters(reversed = true) { i, item ->
 			val chapterSlug = item.getString("chapter_slug")
-			val chapterNum = item.optDouble("chapter_num", (i + 1).toDouble()).toFloat()
-			val chapterName = item.getStringOrNull("chapter_name") ?: "Chapter $chapterNum"
-			val updatedAt = item.getStringOrNull("updated_at") ?: ""
+			val chapterNum = item.getFloatOrDefault("chapter_num", (i + 1).toFloat())
+			val chapterName = item.optString("chapter_name", "Chapter $chapterNum")
+			val updatedAt = item.optString("updated_at", "")
 
 			MangaChapter(
 				id = generateUid(chapterSlug),
@@ -212,7 +241,7 @@ internal abstract class MangaboxParser(
 				scanlator = null,
 				branch = null,
 			)
-		}.reversed() // API returns newest first, we want oldest first
+		}
 	}
 
 	protected open val selectPage = ".container-chapter-reader img, div#vungdoc img"
@@ -247,5 +276,22 @@ internal abstract class MangaboxParser(
 				source = source,
 			)
 		}
+	}
+
+	// fetch from page
+	private fun String.filterQuery(): String {
+		return lowercase()
+			.replace(Regex("Ã |Ã¡|áº¡|áº£|Ã£|Ã¢|áº§|áº¥|áº­|áº©|áº«|Äƒ|áº±|áº¯|áº·|áº³|áºµ"), "a")
+			.replace(Regex("Ã¨|Ã©|áº¹|áº»|áº½|Ãª|á»|áº¿|á»‡|á»ƒ|á»…"), "e")
+			.replace(Regex("Ã¬|Ã­|á»‹|á»‰|Ä©"), "i")
+			.replace(Regex("Ã²|Ã³|á»|á»|Ãµ|Ã´|á»“|á»‘|á»™|á»•|á»—|Æ¡|á»|á»›|á»£|á»Ÿ|á»¡"), "o")
+			.replace(Regex("Ã¹|Ãº|á»¥|á»§|Å©|Æ°|á»«|á»©|á»±|á»­|á»¯"), "u")
+			.replace(Regex("á»³|Ã½|á»µ|á»·|á»¹"), "y")
+			.replace(Regex("Ä‘"), "d")
+			.replace(Regex("[!@%^*()+=<>?/,.:'\"&#\\[\\]~\\-$ _]+"), "_")
+			.replace(Regex("_+"), "_")
+			.replace(Regex("^_+|_+$"), "")
+			// force split + joinToString
+			.splitByWhitespace().joinToString("_") { it }
 	}
 }
