@@ -1,6 +1,5 @@
 package org.koitharu.kotatsu.parsers.site.en
 
-import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import org.json.JSONObject
 import org.jsoup.Jsoup
@@ -100,7 +99,7 @@ internal class MangaGeko(context: MangaLoaderContext) :
 			}
 		} else {
 			val response = webClient.httpGet(url)
-			val jsonStr = response.body?.string() ?: return emptyList()
+			val jsonStr = response.body.string()
 			val json = JSONObject(jsonStr)
 			val html = json.optString("results_html", "")
 			val doc = Jsoup.parse(html, "https://$domain/")

@@ -1,11 +1,12 @@
 package org.koitharu.kotatsu.parsers.site.pt
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
-import org.jsoup.nodes.Document
 import org.koitharu.kotatsu.parsers.Broken
 import org.koitharu.kotatsu.parsers.MangaLoaderContext
 import org.koitharu.kotatsu.parsers.MangaSourceParser
@@ -37,7 +38,6 @@ import java.text.SimpleDateFormat
 import java.util.EnumSet
 import java.util.Locale
 import java.util.TimeZone
-import java.util.regex.Pattern
 
 @Broken("Refactor code")
 @MangaSourceParser("TAIYO", "Taiyō", "pt")
@@ -281,7 +281,9 @@ internal class TaiyoParser(context: MangaLoaderContext) :
 
 		do {
 			val input = "{\"json\":{\"mediaId\":\"$mediaId\",\"page\":$page,\"perPage\":$perPage}}"
-			val encodedInput = URLEncoder.encode(input, "UTF-8")
+			val encodedInput = withContext(Dispatchers.IO) {
+				URLEncoder.encode(input, "UTF-8")
+			}
 			val apiUrl = "https://$domain/api/trpc/chapters.getByMediaId?input=$encodedInput"
 
 			val response = webClient.httpGet(apiUrl).parseJson()

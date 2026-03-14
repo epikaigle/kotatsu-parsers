@@ -1,6 +1,5 @@
 package org.koitharu.kotatsu.parsers.site.fr
 
-import org.json.JSONArray
 import org.json.JSONObject
 import org.jsoup.nodes.Document
 import org.koitharu.kotatsu.parsers.MangaLoaderContext
@@ -539,7 +538,7 @@ internal class PoseidonScans(context: MangaLoaderContext) :
 	override suspend fun getDetails(manga: Manga): Manga {
 		if (!manga.chapters.isNullOrEmpty()) {
 			return manga.copy(
-				chapters = normalizeChapterOrder(manga.chapters.orEmpty()),
+				chapters = normalizeChapterOrder(manga.chapters),
 			)
 		}
 
@@ -790,7 +789,7 @@ internal class PoseidonScans(context: MangaLoaderContext) :
 				lower.contains("/$slug/") || lower.contains("/mangas/$slug/") || lower.contains("/api/chapters/$slug/")
 			}
 		}
-		val finalUrls = if (chapterScopedUrls.isNotEmpty()) chapterScopedUrls else extractedUrls
+		val finalUrls = chapterScopedUrls.ifEmpty { extractedUrls }
 		return finalUrls.map { imageUrl ->
 			MangaPage(
 				id = generateUid(imageUrl),
@@ -897,7 +896,7 @@ internal class PoseidonScans(context: MangaLoaderContext) :
 		if (dateString.isNullOrBlank()) return 0L
 
 		val cleanedDateString =
-			dateString.removePrefix("\"").removeSuffix("\"").removePrefix("\$D").removePrefix("D").trim()
+			dateString.removePrefix("\"").removeSuffix("\"").removePrefix($$"$D").removePrefix("D").trim()
 
 		return isoDateFormat.parseSafe(cleanedDateString)
 	}
