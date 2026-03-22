@@ -3,6 +3,7 @@ package org.koitharu.kotatsu.parsers.site.madara.en
 import okhttp3.Headers
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
+import org.koitharu.kotatsu.parsers.Broken
 import org.koitharu.kotatsu.parsers.MangaLoaderContext
 import org.koitharu.kotatsu.parsers.MangaSourceParser
 import org.koitharu.kotatsu.parsers.model.ContentType
@@ -10,6 +11,7 @@ import org.koitharu.kotatsu.parsers.model.Manga
 import org.koitharu.kotatsu.parsers.model.MangaChapter
 import org.koitharu.kotatsu.parsers.model.MangaPage
 import org.koitharu.kotatsu.parsers.model.MangaParserSource
+import org.koitharu.kotatsu.parsers.network.CommonHeaders
 import org.koitharu.kotatsu.parsers.site.madara.MadaraParser
 import org.koitharu.kotatsu.parsers.util.attrAsRelativeUrl
 import org.koitharu.kotatsu.parsers.util.generateUid
@@ -20,6 +22,7 @@ import org.koitharu.kotatsu.parsers.util.toAbsoluteUrl
 import java.text.SimpleDateFormat
 import java.util.Locale
 
+@Broken("Check + refactor code needed")
 @MangaSourceParser("MANHWACLUB", "Manhwaclub", "en", ContentType.HENTAI)
 internal class ManhwaClub(context: MangaLoaderContext) :
 	MadaraParser(context, MangaParserSource.MANHWACLUB, "manhwaclub.net") {
@@ -45,8 +48,8 @@ internal class ManhwaClub(context: MangaLoaderContext) :
 	}
 
 	override fun getRequestHeaders(): Headers = super.getRequestHeaders().newBuilder()
-		.set("Referer", "https://$domain/")
-		.set("Origin", "https://$domain")
+		.set(CommonHeaders.REFERER, "https://$domain/")
+		.set(CommonHeaders.ORIGIN, "https://$domain")
 		.build()
 
 	override suspend fun getChapters(manga: Manga, doc: Document): List<MangaChapter> {
@@ -54,7 +57,7 @@ internal class ManhwaClub(context: MangaLoaderContext) :
 		synchronized(chaptersCache) {
 			chaptersCache[cacheKey]?.let { return it }
 		}
-		val chapters = parseChapterList(doc.body().select(selectChapter), sourceOrderFallback = true)
+		val chapters = parseChapterList(doc.body().select(selectChapter))
 		if (chapters.isNotEmpty()) {
 			synchronized(chaptersCache) {
 				chaptersCache[cacheKey] = chapters
@@ -71,10 +74,8 @@ internal class ManhwaClub(context: MangaLoaderContext) :
 		}
 
 		val chaptersFromAsync = requestAsyncChapters(mangaUrl, document)
-		val chapters = if (chaptersFromAsync.isNotEmpty()) {
-			chaptersFromAsync
-		} else {
-			parseChapterList(document.body().select(selectChapter), sourceOrderFallback = true)
+		val chapters = chaptersFromAsync.ifEmpty {
+			parseChapterList(document.body().select(selectChapter))
 		}
 		if (chapters.isNotEmpty()) {
 			synchronized(chaptersCache) {
@@ -90,14 +91,14 @@ internal class ManhwaClub(context: MangaLoaderContext) :
 			val adminAjaxUrl = "https://$domain/wp-admin/admin-ajax.php"
 			val postData = postDataReq + mangaId
 			val adminAjaxDoc = webClient.httpPost(adminAjaxUrl, postData).parseHtml()
-			val adminAjaxChapters = parseChapterList(adminAjaxDoc.select(selectChapter), sourceOrderFallback = true)
+			val adminAjaxChapters = parseChapterList(adminAjaxDoc.select(selectChapter))
 			if (adminAjaxChapters.isNotEmpty()) {
 				return adminAjaxChapters
 			}
 		}
 		val ajaxUrl = mangaUrl.toAbsoluteUrl(domain).removeSuffix("/") + "/ajax/chapters/"
 		val ajaxDoc = webClient.httpPost(ajaxUrl, emptyMap()).parseHtml()
-		return parseChapterList(ajaxDoc.select(selectChapter), sourceOrderFallback = true)
+		return parseChapterList(ajaxDoc.select(selectChapter))
 	}
 
 	override suspend fun getPages(chapter: MangaChapter): List<MangaPage> {
@@ -114,7 +115,9 @@ internal class ManhwaClub(context: MangaLoaderContext) :
 		return pages
 	}
 
-	private fun parseChapterList(items: List<Element>, sourceOrderFallback: Boolean): List<MangaChapter> {
+	// What are its actual conditions :p?
+	// Alway "true" in sourceOrderFallback :p?
+	private fun parseChapterList(items: List<Element>): List<MangaChapter> {
 		val dateFormat = chapterDateFormat.get()
 		return items.mapChapters(reversed = true) { i, li ->
 			val a = li.selectFirstOrThrow("a")
@@ -133,7 +136,7 @@ internal class ManhwaClub(context: MangaLoaderContext) :
 					href = href,
 					titleLower = chapterTitleLower,
 					hrefLower = hrefLower,
-					fallback = if (sourceOrderFallback) i + 1f else 0f,
+					fallback = i + 1f,
 				),
 				volume = 0,
 				url = href + stylePage,
