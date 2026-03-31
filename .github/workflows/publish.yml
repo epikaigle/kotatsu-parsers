@@ -60,5 +60,4 @@ jobs:
                     body: |
                         Built from commit [`${{ steps.meta.outputs.sha_short }}`](https://github.com/YakaTeam/kotatsu-parsers/commit/${{ github.sha }})
                     files: ${{ env.D8_PATH }}
-                env:
-                    GITHUB_TOKEN: ${{ secrets.ARTIFACT_REPO_TOKEN }}
+                    token: ${{ secrets.ARTIFACT_REPO_TOKEN }}
