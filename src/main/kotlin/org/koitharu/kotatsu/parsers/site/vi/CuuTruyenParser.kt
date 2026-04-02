@@ -29,9 +29,9 @@ internal class CuuTruyenParser(context: MangaLoaderContext) :
 	override val userAgentKey = ConfigKey.UserAgent(UserAgents.KOTATSU)
 
 	override val configKeyDomain = ConfigKey.Domain(
+		"hetcuutruyen.net",
 		"cuutruyen.net",
 		"nettrom.com",
-		"hetcuutruyen.net",
 	)
 
     private val preferredServerKey = ConfigKey.PreferredImageServer(
