@@ -5,6 +5,8 @@ on:
     push:
         branches:
             - master
+        paths:
+            - 'src/main/kotlin/org/koitharu/kotatsu/parsers/**'
 
 env:
     D8_PATH: build/libs/plugin.jar
