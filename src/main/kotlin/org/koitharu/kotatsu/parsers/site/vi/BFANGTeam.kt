@@ -30,7 +30,7 @@ import java.text.SimpleDateFormat
 import java.util.EnumSet
 import java.util.Locale
 
-@MangaSourceParser("BFANGTEAM", "BFANG Team (Động Mòe)", "vi")
+@MangaSourceParser("BFANGTEAM", "Moè Truyện", "vi")
 internal class BFANGTeam (context: MangaLoaderContext) :
 	SinglePageMangaParser(context, MangaParserSource.BFANGTEAM) {
 
