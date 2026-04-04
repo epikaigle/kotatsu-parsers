@@ -29,7 +29,9 @@ import org.koitharu.kotatsu.parsers.util.urlEncoded
 import java.text.SimpleDateFormat
 import java.util.EnumSet
 import java.util.Locale
+import org.koitharu.kotatsu.parsers.Broken
 
+@Broken("Need to add handler for chapters paging")
 @MangaSourceParser("BFANGTEAM", "Moè Truyện", "vi")
 internal class BFANGTeam (context: MangaLoaderContext) :
 	SinglePageMangaParser(context, MangaParserSource.BFANGTEAM) {
