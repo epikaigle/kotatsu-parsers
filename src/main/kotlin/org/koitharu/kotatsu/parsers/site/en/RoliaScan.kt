@@ -8,6 +8,7 @@ import org.koitharu.kotatsu.parsers.MangaSourceParser
 import org.koitharu.kotatsu.parsers.config.ConfigKey
 import org.koitharu.kotatsu.parsers.core.PagedMangaParser
 import org.koitharu.kotatsu.parsers.model.*
+import org.koitharu.kotatsu.parsers.network.CommonHeaders
 import org.koitharu.kotatsu.parsers.util.*
 import org.koitharu.kotatsu.parsers.util.json.asTypedList
 import org.koitharu.kotatsu.parsers.util.json.mapJSON
@@ -162,29 +163,21 @@ internal class RoliaScan(context: MangaLoaderContext) : PagedMangaParser(context
 
 	private suspend fun fetchChapters(mangaId: Long, referer: String): List<MangaChapter> {
 		val collected = ArrayList<JSONObject>()
-		val pageLimit = 500
 		var offset = 0
 		while (true) {
 			val (token, timestamp) = generateApiToken()
-			val url = buildString {
-				append("https://")
-				append(domain)
-				append("/auth/manga-chapters?manga_id=")
-				append(mangaId)
-				append("&offset=")
-				append(offset)
-				append("&limit=")
-				append(pageLimit)
-				append("&order=desc&_t=")
-				append(token)
-				append("&_ts=")
-				append(timestamp)
-			}
+			val url = urlBuilder().addPathSegments("auth/manga-chapters")
+				.addQueryParameter("manga_id", mangaId.toString())
+				.addQueryParameter("offset", offset.toString())
+				.addQueryParameter("limit", PAGE_SIZE.toString())
+				.addQueryParameter("order", "desc")
+				.addQueryParameter("_t", token)
+				.addQueryParameter("_ts", timestamp.toString())
 			val headers = Headers.Builder()
-				.add("Referer", referer)
-				.add("X-Requested-With", "XMLHttpRequest")
+				.add(CommonHeaders.REFERER, referer)
+				.add(CommonHeaders.X_REQUESTED_WITH, "XMLHttpRequest")
 				.build()
-			val json = webClient.httpGet(url, headers).parseJson()
+			val json = webClient.httpGet(url.build(), headers).parseJson()
 			val chapters = json.optJSONArray("chapters") ?: break
 			if (chapters.length() == 0) break
 			for (i in 0 until chapters.length()) {
@@ -194,7 +187,7 @@ internal class RoliaScan(context: MangaLoaderContext) : PagedMangaParser(context
 			offset += chapters.length()
 		}
 		// API returns newest-first; reverse so chapter[0] is the oldest
-		return collected.asReversed().mapIndexed { i, obj ->
+		return collected.mapChapters(reversed = true) { i, obj ->
 			val chapterUrl = obj.getString("url").toRelativeUrl(domain)
 			val label = obj.optString("chapter")
 			val title = obj.optString("title").takeIf { it.isNotEmpty() && it != "N/A" }
@@ -253,5 +246,9 @@ internal class RoliaScan(context: MangaLoaderContext) : PagedMangaParser(context
 		return values.joinToString(prefix = "[", postfix = "]") {
 			"\"" + it.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 		}
+	}
+
+	private companion object {
+		const val PAGE_SIZE = 500
 	}
 }
