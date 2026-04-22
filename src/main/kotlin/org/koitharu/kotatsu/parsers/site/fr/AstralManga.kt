@@ -94,11 +94,18 @@ internal class AstralManga(context: MangaLoaderContext) :
 		RegexOption.DOT_MATCHES_ALL,
 	)
 
-	private val nextJsPayloadAnchorPatterns = arrayOf(
-		""""manga":{""",
+	private val nextJsCatalogAnchorPatterns = arrayOf(
 		""""mangas":[""",
 		""""urlId":"""",
+	)
+
+	private val nextJsDetailsAnchorPatterns = arrayOf(
+		""""manga":{""",
+		""""urlId":"""",
 		""""chapters":[""",
+	)
+
+	private val nextJsPagesAnchorPatterns = arrayOf(
 		""""chapter":{""",
 		""""images":[""",
 		""""pages":[""",
@@ -147,7 +154,7 @@ internal class AstralManga(context: MangaLoaderContext) :
 		val slug = extractSlugFromMangaUrl(manga.url).ifBlank {
 			extractSlugFromMangaUrl(manga.publicUrl)
 		}
-		val containers = extractNextJsObjects(doc)
+		val containers = extractNextJsObjects(doc, nextJsDetailsAnchorPatterns)
 		val detailsJson = findMangaDetailsObject(containers, slug)
 
 		if (detailsJson == null) {
@@ -155,18 +162,21 @@ internal class AstralManga(context: MangaLoaderContext) :
 				?.takeIf { isCoverUrlFresh(it) }
 				?: normalizeCoverUrl(doc.selectFirst("meta[property=og:image]")?.attr("content"))
 				?: manga.coverUrl
+			val fallbackChapters = extractChaptersFromHtml(doc, slug)
 			if (!slug.isBlank() && !resolvedCover.isNullOrBlank()) {
 				putCoverCache(slug, resolvedCover)
 			}
 			return manga.copy(
 				description = manga.description ?: doc.selectFirst("meta[name=description]")?.attr("content"),
 				coverUrl = resolvedCover,
+				chapters = fallbackChapters.ifEmpty { manga.chapters.orEmpty() },
 			)
 		}
 
 		val parsed = parseMangaCache(detailsJson)?.manga
 		val chapterSlug = extractSlugFromMangaJson(detailsJson).ifBlank { slug }
 		val chapters = extractChapters(detailsJson, chapterSlug)
+			.ifEmpty { extractChaptersFromHtml(doc, chapterSlug) }
 		val resolvedCover = parsed?.coverUrl
 			?.takeIf { isCoverUrlFresh(it) }
 			?: normalizeCoverUrl(doc.selectFirst("meta[property=og:image]")?.attr("content"))
@@ -277,7 +287,23 @@ internal class AstralManga(context: MangaLoaderContext) :
 
 	override suspend fun getPages(chapter: MangaChapter): List<MangaPage> {
 		val doc = fetchDocument(chapter.url.toAbsoluteUrl(domain))
-		val containers = extractNextJsObjects(doc)
+
+		// Current chapter pages render the signed page images directly in the DOM.
+		extractFastImageUrlsFromChapterHtml(doc)
+			.ifEmpty { extractImageUrlsFromChapterHtml(doc) }
+			.takeIf { it.isNotEmpty() }
+			?.let { urls ->
+				return urls.map { imageUrl ->
+					MangaPage(
+						id = generateUid(imageUrl),
+						url = imageUrl,
+						preview = null,
+						source = chapter.source,
+					)
+				}
+			}
+
+		val containers = extractNextJsObjects(doc, nextJsPagesAnchorPatterns)
 		val urls = LinkedHashSet<String>()
 
 		var chapterArray: JSONArray? = null
@@ -314,10 +340,6 @@ internal class AstralManga(context: MangaLoaderContext) :
 			}
 		}
 
-		if (urls.isEmpty()) {
-			urls += extractImageUrlsFromChapterHtml(doc)
-		}
-
 		return urls.map { imageUrl ->
 			MangaPage(
 				id = generateUid(imageUrl),
@@ -326,6 +348,16 @@ internal class AstralManga(context: MangaLoaderContext) :
 				source = chapter.source,
 			)
 		}
+	}
+
+	private fun extractFastImageUrlsFromChapterHtml(doc: Document): List<String> {
+		val urls = LinkedHashSet<String>()
+		val preferredImages = doc.select("img[alt^=Page],img[src*='/chapters/'],img[src*='%2Fchapters%2F']")
+		val images = if (preferredImages.isNotEmpty()) preferredImages else doc.select("img[src]")
+		for (image in images) {
+			checkPageImageUrl(image.attr("src"))?.let { urls += it }
+		}
+		return urls.toList()
 	}
 
 	private suspend fun getFilteredAndSortedList(order: SortOrder, filter: MangaListFilter): List<Manga> {
@@ -387,7 +419,7 @@ internal class AstralManga(context: MangaLoaderContext) :
 
 	private suspend fun fetchCatalogMangaList(): List<MangaCache> {
 		val doc = fetchDocument("https://$domain/catalog")
-		val containers = extractNextJsObjects(doc)
+		val containers = extractNextJsObjects(doc, nextJsCatalogAnchorPatterns)
 		val mangaBySlug = LinkedHashMap<String, MangaCache>()
 		for (mangaJson in extractMangaObjects(containers)) {
 			val parsed = parseMangaCache(mangaJson) ?: continue
@@ -761,8 +793,11 @@ internal class AstralManga(context: MangaLoaderContext) :
 				volume = 0,
 				url = chapterUrl,
 				scanlator = null,
-				uploadDate = parseDate(chapterJson.getStringOrNull("publishDate"))
-					.coerceAtLeast(parseDate(chapterJson.getStringOrNull("createdAt"))),
+				uploadDate = maxOf(
+					parseDate(chapterJson.getStringOrNull("publishDate")),
+					parseDate(chapterJson.getStringOrNull("createdAt")),
+					parseDate(chapterJson.getStringOrNull("updatedAt")),
+				),
 				branch = null,
 				source = source,
 			)
@@ -770,6 +805,57 @@ internal class AstralManga(context: MangaLoaderContext) :
 		return list.distinctBy { it.url }.sortedWith(
 			compareBy<MangaChapter> { it.number.toDouble() }
 				.thenBy { it.uploadDate }
+				.thenBy { it.title },
+			)
+	}
+
+	private fun extractChaptersFromHtml(doc: Document, slug: String): List<MangaChapter> {
+		val chaptersByUrl = LinkedHashMap<String, MangaChapter>()
+		for ((index, link) in doc.select("a[href*=\"/chapter/\"]").withIndex()) {
+			val href = link.attr("href")
+				.substringBefore('?')
+				.substringBefore('#')
+			if (!href.contains("/chapter/")) continue
+			if (slug.isNotBlank() && !href.contains("/manga/$slug/chapter/")) continue
+
+			val chapterUrl = (href.toHttpUrlOrNull()
+				?.encodedPath
+				?: href)
+				.takeIf { it.isNotBlank() }
+				?: continue
+			val text = link.text()
+				.replace(Regex("""\s+"""), " ")
+				.trim()
+				.removePrefix("cover de l'oeuvre ")
+				.trim()
+			val parsedTitle = CHAPTER_TITLE_REGEX.find(text)
+				?.groupValues
+				?.getOrNull(1)
+				?.trim()
+				?.takeIf { it.isNotEmpty() }
+			val chapterNumber = when {
+				parsedTitle != null -> parseChapterNumberFromTitle(parsedTitle, index + 1)
+				text.contains("premier chapitre", ignoreCase = true) -> 1f
+				else -> (index + 1).toFloat()
+			}
+			val chapterTitle = parsedTitle ?: "Chapitre ${formatChapterNumber(chapterNumber)}"
+			chaptersByUrl.putIfAbsent(
+				chapterUrl,
+				MangaChapter(
+					id = generateUid(chapterUrl),
+					title = chapterTitle,
+					number = chapterNumber,
+					volume = 0,
+					url = chapterUrl,
+					scanlator = null,
+					uploadDate = 0L,
+					branch = null,
+					source = source,
+				),
+			)
+		}
+		return chaptersByUrl.values.sortedWith(
+			compareBy<MangaChapter> { it.number.toDouble() }
 				.thenBy { it.title },
 		)
 	}
@@ -789,6 +875,14 @@ internal class AstralManga(context: MangaLoaderContext) :
 		} else {
 			number.toString()
 		}
+	}
+
+	private fun parseChapterNumberFromTitle(title: String, fallback: Int): Float {
+		val match = CHAPTER_NUMBER_REGEX.find(title) ?: return fallback.toFloat()
+		return match.groupValues[1]
+			.replace(',', '.')
+			.toFloatOrNull()
+			?: fallback.toFloat()
 	}
 
 	private fun parseStatus(raw: String?): MangaState? {
@@ -942,13 +1036,14 @@ internal class AstralManga(context: MangaLoaderContext) :
 			|| doc.getElementById("cf-wrapper") != null
 	}
 
-	private fun extractNextJsObjects(document: Document): List<JSONObject> {
+	private fun extractNextJsObjects(document: Document, anchorPatterns: Array<String>): List<JSONObject> {
 		val objects = ArrayList<JSONObject>()
 		val seen = HashSet<String>()
 
 		for (script in document.select("script")) {
 			val scriptContent = script.data()
 			if (!scriptContent.contains("self.__next_f.push")) continue
+			if (anchorPatterns.none(scriptContent::contains)) continue
 
 			val matches = nextFPushRegex.findAll(scriptContent)
 			for (match in matches) {
@@ -959,7 +1054,7 @@ internal class AstralManga(context: MangaLoaderContext) :
 					.replace("\\\"", "\"")
 				val seenStarts = HashSet<Int>()
 
-				for (pattern in nextJsPayloadAnchorPatterns) {
+				for (pattern in anchorPatterns) {
 					var index = -1
 					while (true) {
 						index = cleanedData.indexOf(pattern, startIndex = index + 1)
@@ -1042,7 +1137,7 @@ internal class AstralManga(context: MangaLoaderContext) :
 
 		visit(node)
 		val bestArray = best ?: return null
-		return if (bestCount > 0) JsonArrayCandidate(bestArray, bestCount) else null
+		return JsonArrayCandidate(bestArray, bestCount)
 	}
 
 	private fun findChapterImagesArray(node: Any?): JsonArrayCandidate? {
@@ -1077,7 +1172,7 @@ internal class AstralManga(context: MangaLoaderContext) :
 
 		visit(node)
 		val bestArray = best ?: return null
-		return if (bestCount > 0) JsonArrayCandidate(bestArray, bestCount) else null
+		return JsonArrayCandidate(bestArray, bestCount)
 	}
 
 	private fun countImageEntries(array: JSONArray): Int {
@@ -1225,13 +1320,18 @@ internal class AstralManga(context: MangaLoaderContext) :
 
 	private fun looksLikePageImageUrl(value: String): Boolean {
 		val lower = value.lowercase(Locale.ROOT)
-		if (lower.contains("/uploads/projects/")) return true
 		if (lower.contains("/api/chapters/")) return true
-		if (lower.contains("s3.eu-west-2.wasabisys.com/astral-bucket/")) return true
-		return PAGE_IMAGE_URL_REGEX.matches(lower)
+		val isChapterAsset = lower.contains("/chapters/") && !lower.contains("/cover/")
+		if (lower.contains("/uploads/projects/")) return isChapterAsset
+		if (lower.contains("s3.eu-west-2.wasabisys.com/astral-bucket/")) return isChapterAsset
+		return isChapterAsset && PAGE_IMAGE_URL_REGEX.matches(lower)
 	}
 
 	private companion object {
+		private val CHAPTER_TITLE_REGEX = Regex(
+			"""(?i)(chapitre\s+\d+(?:[.,]\d+)?(?:\s*-\s*.*?)?)(?=(?:\s*\d+\s*vues?\b)|$)""",
+		)
+		private val CHAPTER_NUMBER_REGEX = Regex("""(?i)chapitre\s+(\d+(?:[.,]\d+)?)""")
 		private val PAGE_IMAGE_URL_REGEX = Regex(""".*\.(jpg|jpeg|png|webp|avif|gif)(\?.*)?$""")
 		private val REACT_REFERENCE_REGEX = Regex("""^\$[A-Za-z0-9]+$""")
 	}
