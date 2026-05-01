@@ -375,14 +375,14 @@ internal abstract class MadaraParser(
 				payload["vars[tax_query][2][terms][]"] = filter.year.toString()
 			}
 
-			// Support author
-			//  filter.author.let {
-			//	payload["vars[tax_query][3][taxonomy]"] = "wp-manga-author"
-			//	payload["vars[tax_query][3][field]"] = "name"
-			//	payload["vars[tax_query][3][terms][0]"] = filter.author
-			//	payload["vars[tax_query][3][operator]"] = "IN"
-			//}
-
+			if (!filter.author.isNullOrEmpty()) {
+				filter.author.let {
+					payload["vars[tax_query][3][taxonomy]"] = "wp-manga-author"
+					payload["vars[tax_query][3][field]"] = "name"
+					payload["vars[tax_query][3][terms][0]"] = filter.author
+					payload["vars[tax_query][3][operator]"] = "IN"
+				}
+			}
 
 			// Support artist
 			//  filter.artist.let {
@@ -506,7 +506,7 @@ internal abstract class MadaraParser(
 
 	protected open fun parseMangaList(doc: Document): List<Manga> {
 		val elements = doc.select("div.row.c-tabs-item__content").ifEmpty {
-			doc.select("div.page-item-detail")
+			doc.select("div.page-item-detail, div.manga__item")
 		}
 
 		// Avoid "Content not found or removed" errors
@@ -523,7 +523,8 @@ internal abstract class MadaraParser(
 				url = href,
 				publicUrl = href.toAbsoluteUrl(div.host ?: domain),
 				coverUrl = div.selectFirst("img")?.src(),
-				title = (summary?.selectFirst("h3, h4") ?: div.selectFirst(".manga-name, .post-title"))?.text()
+				title = (summary?.selectFirst("h3, h4")
+					?: div.selectFirst(".manga-name, .post-title h2 a, .post-title"))?.text()
 					.orEmpty(),
 				altTitles = emptySet(),
 				rating = div.selectFirst("span.total_votes")?.ownText()?.toFloatOrNull()?.div(5f) ?: RATING_UNKNOWN,
@@ -734,7 +735,7 @@ internal abstract class MadaraParser(
 	}
 
 	protected open val selectBodyPage = "div.main-col-inner div.reading-content"
-	protected open val selectPage = "div.page-break"
+	protected open val selectPage = "div.page-break, div.page-box"
 	protected open val selectRequiredLogin = ".content-blocked, .login-required"
 
 	override suspend fun getPages(chapter: MangaChapter): List<MangaPage> {
@@ -776,7 +777,7 @@ internal abstract class MadaraParser(
 				chapterProtectorHtml.substringAfter("chapter_data='").substringBefore("';").replace("\\/", "/"),
 			)
 			val unsaltedCiphertext = context.decodeBase64(chapterData.getString("ct"))
-			val salt = chapterData.getString("s").toString().decodeHex()
+			val salt = chapterData.getString("s").decodeHex()
 			val ciphertext = "Salted__".toByteArray(Charsets.UTF_8) + salt + unsaltedCiphertext
 
 			val rawImgArray = CryptoAES(context).decrypt(context.encodeBase64(ciphertext), password)

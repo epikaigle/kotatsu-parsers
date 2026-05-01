@@ -13,6 +13,7 @@ import org.koitharu.kotatsu.parsers.MangaSourceParser
 import org.koitharu.kotatsu.parsers.config.ConfigKey
 import org.koitharu.kotatsu.parsers.core.SinglePageMangaParser
 import org.koitharu.kotatsu.parsers.model.*
+import org.koitharu.kotatsu.parsers.network.CommonHeaders
 import org.koitharu.kotatsu.parsers.util.*
 import java.text.SimpleDateFormat
 import java.util.zip.ZipInputStream
@@ -25,7 +26,8 @@ internal class LuratoonScansParser(context: MangaLoaderContext) :
 
     override val configKeyDomain = ConfigKey.Domain("luratoons.net")
 
-    override fun getRequestHeaders(): Headers = Headers.Builder().add("User-Agent", config[userAgentKey]).build()
+    override fun getRequestHeaders(): Headers = Headers.Builder()
+		.add(CommonHeaders.USER_AGENT, config[userAgentKey]).build()
 
     override val availableSortOrders = setOf(SortOrder.ALPHABETICAL)
 
@@ -68,7 +70,7 @@ internal class LuratoonScansParser(context: MangaLoaderContext) :
         val doc = webClient.httpGet(manga.url.toAbsoluteUrl(domain)).parseHtml().body()
         val summaryContainer = doc.selectFirstOrThrow(".sumario__container")
         // 1 de Maio de 2024 às 20:15
-        val dateFormat = SimpleDateFormat("dd 'de' MMM 'de' YYYY 'às' HH:mm", sourceLocale)
+        val dateFormat = SimpleDateFormat("dd 'de' MMM 'de' yyyy 'às' HH:mm", sourceLocale)
         val author = summaryContainer.getElementsContainingOwnText("Autor(es)").firstOrNull()
             ?.nextElementSibling()?.textOrNull()
         return manga.copy(
@@ -147,7 +149,7 @@ internal class LuratoonScansParser(context: MangaLoaderContext) :
                 "image/*"
             }.toMediaTypeOrNull()
             return response.newBuilder()
-                .setHeader("Content-Type", type?.toString())
+                .setHeader(CommonHeaders.CONTENT_TYPE, type?.toString())
                 .body(bytes.toResponseBody(type))
                 .build()
         } else {

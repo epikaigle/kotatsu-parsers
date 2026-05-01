@@ -8,7 +8,7 @@ plugins {
 }
 
 group = "org.koitharu"
-version = "1.0"
+version = "1.2.5"
 
 tasks.test {
     useJUnitPlatform()
@@ -16,6 +16,10 @@ tasks.test {
 
 ksp {
     arg("summaryOutputDir", "${projectDir}/.github")
+}
+
+tasks.jar {
+	archiveFileName.set("kotatsu-parsers.jar")
 }
 
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {

@@ -11,6 +11,7 @@ import org.koitharu.kotatsu.parsers.MangaSourceParser
 import org.koitharu.kotatsu.parsers.config.ConfigKey
 import org.koitharu.kotatsu.parsers.core.PagedMangaParser
 import org.koitharu.kotatsu.parsers.model.*
+import org.koitharu.kotatsu.parsers.network.CommonHeaders
 import org.koitharu.kotatsu.parsers.util.*
 import java.text.SimpleDateFormat
 import java.util.*
@@ -59,7 +60,7 @@ internal abstract class NineMangaParser(
 	override fun intercept(chain: Interceptor.Chain): Response {
 		val request = chain.request()
 		val newRequest = if (request.url.host == domain) {
-			request.newBuilder().removeHeader("Referer").build()
+			request.newBuilder().removeHeader(CommonHeaders.REFERER).build()
 		} else {
 			request
 		}
@@ -235,7 +236,7 @@ internal abstract class NineMangaParser(
 			if (dateWords[1].contains(",")) {
 				SimpleDateFormat("MMM d, yyyy", Locale.ENGLISH).parseSafe(date)
 			} else {
-				val timeAgo = Integer.parseInt(dateWords[0])
+				val timeAgo = dateWords[0].toIntOrNull() ?: 0
 				return Calendar.getInstance().apply {
 					when (dateWords[1]) {
 						"minutes" -> Calendar.MINUTE // EN-FR

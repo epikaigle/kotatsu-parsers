@@ -11,6 +11,7 @@ import org.koitharu.kotatsu.parsers.MangaSourceParser
 import org.koitharu.kotatsu.parsers.config.ConfigKey
 import org.koitharu.kotatsu.parsers.core.PagedMangaParser
 import org.koitharu.kotatsu.parsers.model.*
+import org.koitharu.kotatsu.parsers.network.CommonHeaders
 import org.koitharu.kotatsu.parsers.util.*
 import org.koitharu.kotatsu.parsers.util.json.asTypedList
 import org.koitharu.kotatsu.parsers.util.json.getStringOrNull
@@ -20,7 +21,7 @@ import org.koitharu.kotatsu.parsers.util.suspendlazy.suspendLazy
 import java.text.SimpleDateFormat
 import java.util.*
 
-@Broken
+@Broken("Domain hijacked — now serves a JS redirect to spam/ads")
 @MangaSourceParser("NINENINENINEHENTAI", "AnimeH", type = ContentType.HENTAI)
 internal class NineNineNineHentaiParser(context: MangaLoaderContext) :
 	PagedMangaParser(context, MangaParserSource.NINENINENINEHENTAI, PAGE_SIZE), Interceptor {
@@ -67,8 +68,8 @@ internal class NineNineNineHentaiParser(context: MangaLoaderContext) :
 	// Need for disable encoding (with encoding not working)
 	override fun intercept(chain: Interceptor.Chain): Response {
 		val request = chain.request()
-		val newRequest = if (request.header("Content-Encoding") != null) {
-			request.newBuilder().removeHeader("Content-Encoding").build()
+		val newRequest = if (request.header(CommonHeaders.CONTENT_ENCODING) != null) {
+			request.newBuilder().removeHeader(CommonHeaders.CONTENT_ENCODING).build()
 		} else {
 			request
 		}

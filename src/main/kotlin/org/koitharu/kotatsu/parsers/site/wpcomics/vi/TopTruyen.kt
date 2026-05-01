@@ -11,7 +11,7 @@ import java.util.*
 
 @MangaSourceParser("TOPTRUYEN", "TopTruyen", "vi")
 internal class TopTruyen(context: MangaLoaderContext) :
-	WpComicsParser(context, MangaParserSource.TOPTRUYEN, "www.toptruyenss.com", 36) {
+	WpComicsParser(context, MangaParserSource.TOPTRUYEN, "www.toptruyenssi.com", 36) {
 
 	override val datePattern = "dd/MM/yyyy"
 
@@ -93,7 +93,7 @@ internal class TopTruyen(context: MangaLoaderContext) :
 				id = generateUid(href),
 				url = href,
 				publicUrl = href.toAbsoluteUrl(div.host ?: domain),
-				coverUrl = div.selectFirst("div.image-item img")?.findImageUrl().orEmpty(),
+				coverUrl = div.selectFirst("div.image-item img.image-item")?.findImageUrl().orEmpty(),
 				title = div.selectFirst("h3 a")?.text().orEmpty(),
 				altTitles = emptySet(),
 				rating = RATING_UNKNOWN,
@@ -181,25 +181,25 @@ internal class TopTruyen(context: MangaLoaderContext) :
 		return when {
 			dateText.contains("phút trước") -> {
 				val match = relativeTimePattern.find(dateText)
-				val minutes = match?.groups?.get(1)?.value?.toIntOrNull() ?: 0
+				val minutes = match?.groups?.get(1)?.value?.toLongOrNull() ?: 0L
 				System.currentTimeMillis() - minutes * 60 * 1000
 			}
 
 			dateText.contains("giờ trước") -> {
 				val match = relativeTimePattern.find(dateText)
-				val hours = match?.groups?.get(1)?.value?.toIntOrNull() ?: 0
+				val hours = match?.groups?.get(1)?.value?.toLongOrNull() ?: 0L
 				System.currentTimeMillis() - hours * 3600 * 1000
 			}
 
 			dateText.contains("ngày trước") -> {
 				val match = relativeTimePattern.find(dateText)
-				val days = match?.groups?.get(1)?.value?.toIntOrNull() ?: 0
+				val days = match?.groups?.get(1)?.value?.toLongOrNull() ?: 0L
 				System.currentTimeMillis() - days * 86400 * 1000
 			}
 
 			dateText.contains("tuần trước") -> {
 				val match = relativeTimePattern.find(dateText)
-				val weeks = match?.groups?.get(1)?.value?.toIntOrNull() ?: 0
+				val weeks = match?.groups?.get(1)?.value?.toLongOrNull() ?: 0L
 				System.currentTimeMillis() - weeks * 7 * 86400 * 1000
 			}
 
@@ -220,6 +220,7 @@ internal class TopTruyen(context: MangaLoaderContext) :
 				?: img.attrAsRelativeUrlOrNull("data-original")
 				?: return@mapNotNull null
 
+			// Remove ads images, the first page may or may not contain ads
 			if (url.contains("toptruyentv.jpg") ||
 				url.contains("follow.png") ||
 				url.contains("image_default.png") ||
@@ -233,7 +234,8 @@ internal class TopTruyen(context: MangaLoaderContext) :
                 url.contains("toptruyentv11.jpg") ||
 				url.contains("toptruyentv12.jpg") ||
 				url.contains("toptruyentv13.jpg") ||
-				url.contains("toptruyentv14.jpg")) { // Remove ads images
+				url.contains("topssi.jpg") ||
+				url.contains("toptruyentv14.jpg")) {
 				return@mapNotNull null
 			}
 

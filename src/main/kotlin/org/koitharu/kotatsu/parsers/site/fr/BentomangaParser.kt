@@ -12,11 +12,12 @@ import org.koitharu.kotatsu.parsers.config.ConfigKey
 import org.koitharu.kotatsu.parsers.core.PagedMangaParser
 import org.koitharu.kotatsu.parsers.exception.ParseException
 import org.koitharu.kotatsu.parsers.model.*
+import org.koitharu.kotatsu.parsers.network.CommonHeaders
 import org.koitharu.kotatsu.parsers.util.*
 import org.koitharu.kotatsu.parsers.util.json.getIntOrDefault
 import java.util.*
 
-@Broken
+@Broken("Blocked by Cloudflare challenge")
 @MangaSourceParser("BENTOMANGA", "BentoManga", "fr")
 internal class BentomangaParser(context: MangaLoaderContext) :
 	PagedMangaParser(context, MangaParserSource.BENTOMANGA, 10) {
@@ -190,7 +191,7 @@ internal class BentomangaParser(context: MangaLoaderContext) :
 		val json = webClient.httpGet(
 			"https://$domain/api/?id=$chapterId&type=chapter",
 			Headers.headersOf(
-				"Referer", chapterUrl,
+				CommonHeaders.REFERER, chapterUrl,
 				"x-requested-with", "XMLHttpRequest",
 			),
 		).parseJson()

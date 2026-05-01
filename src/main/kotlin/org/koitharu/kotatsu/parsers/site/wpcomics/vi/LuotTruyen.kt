@@ -11,6 +11,7 @@ import org.koitharu.kotatsu.parsers.config.ConfigKey
 import org.koitharu.kotatsu.parsers.exception.AuthRequiredException
 import org.koitharu.kotatsu.parsers.exception.ParseException
 import org.koitharu.kotatsu.parsers.model.*
+import org.koitharu.kotatsu.parsers.network.CommonHeaders
 import org.koitharu.kotatsu.parsers.site.wpcomics.WpComicsParser
 import org.koitharu.kotatsu.parsers.util.*
 import java.text.SimpleDateFormat
@@ -79,7 +80,7 @@ internal class LuotTruyen(context: MangaLoaderContext) :
 
 	override suspend fun getPages(chapter: MangaChapter): List<MangaPage> {
 		val header = Headers.Builder()
-			.add("Cookie", context.cookieJar.getCookies(domain).toString())
+			.add(CommonHeaders.COOKIE, context.cookieJar.getCookies(domain).toString())
 			.build()
 
 		val fullUrl = chapter.url.toAbsoluteUrl(domain)
@@ -139,25 +140,25 @@ internal class LuotTruyen(context: MangaLoaderContext) :
 			dateText.contains("phút trước") -> {
 				val match = relativeTimePattern.find(dateText)
 				val minutes = match?.groups?.get(1)?.value?.toIntOrNull() ?: 0
-				System.currentTimeMillis() - minutes * 60 * 1000
+				System.currentTimeMillis() - minutes * 60_000L
 			}
 
 			dateText.contains("giờ trước") -> {
 				val match = relativeTimePattern.find(dateText)
 				val hours = match?.groups?.get(1)?.value?.toIntOrNull() ?: 0
-				System.currentTimeMillis() - hours * 3600 * 1000
+				System.currentTimeMillis() - hours * 3_600_000L
 			}
 
 			dateText.contains("ngày trước") -> {
 				val match = relativeTimePattern.find(dateText)
 				val days = match?.groups?.get(1)?.value?.toIntOrNull() ?: 0
-				System.currentTimeMillis() - days * 86400 * 1000
+				System.currentTimeMillis() - days * 86_400_000L
 			}
 
 			dateText.contains("tháng trước") -> {
 				val match = relativeTimePattern.find(dateText)
 				val months = match?.groups?.get(1)?.value?.toIntOrNull() ?: 0
-				System.currentTimeMillis() - months * 30 * 86400 * 1000
+				System.currentTimeMillis() - months * 2_592_000_000L
 			}
 
 			absoluteTimePattern.matches(dateText) -> {

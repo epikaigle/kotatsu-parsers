@@ -10,6 +10,7 @@ import org.koitharu.kotatsu.parsers.MangaSourceParser
 import org.koitharu.kotatsu.parsers.config.ConfigKey
 import org.koitharu.kotatsu.parsers.core.PagedMangaParser
 import org.koitharu.kotatsu.parsers.model.*
+import org.koitharu.kotatsu.parsers.network.CommonHeaders
 import org.koitharu.kotatsu.parsers.util.*
 import java.text.SimpleDateFormat
 import java.util.*
@@ -28,7 +29,7 @@ internal class TeamXNovel(context: MangaLoaderContext) :
 	}
 
 	override fun getRequestHeaders(): Headers = super.getRequestHeaders().newBuilder()
-		.add("Referer", "https://$domain/")
+		.add(CommonHeaders.REFERER, "https://$domain/")
 		.build()
 
 	override val filterCapabilities: MangaListFilterCapabilities
@@ -175,7 +176,7 @@ internal class TeamXNovel(context: MangaLoaderContext) :
 					coroutineScope {
 						val result = ArrayList(parseChapters(doc))
 						result.ensureCapacity(result.size * maxPageChapter)
-						(2 downTo maxPageChapter).map { i ->
+						(2..maxPageChapter).map { i ->
 							async {
 								loadChapters(mangaUrl, i)
 							}
@@ -238,31 +239,31 @@ internal class TeamXNovel(context: MangaLoaderContext) :
 			dateText.contains("minute") -> {
 				val match = relativeTimePattern.find(dateText)
 				val minutes = match?.groups?.get(1)?.value?.toIntOrNull() ?: 0
-				System.currentTimeMillis() - minutes * 60 * 1000
+				System.currentTimeMillis() - minutes * 60_000L
 			}
 
 			dateText.contains("hour") -> {
 				val match = relativeTimePattern.find(dateText)
 				val hours = match?.groups?.get(1)?.value?.toIntOrNull() ?: 0
-				System.currentTimeMillis() - hours * 3600 * 1000
+				System.currentTimeMillis() - hours * 3_600_000L
 			}
 
 			dateText.contains("day") -> {
 				val match = relativeTimePattern.find(dateText)
 				val days = match?.groups?.get(1)?.value?.toIntOrNull() ?: 0
-				System.currentTimeMillis() - days * 86400 * 1000
+				System.currentTimeMillis() - days * 86_400_000L
 			}
 
 			dateText.contains("week") -> {
 				val match = relativeTimePattern.find(dateText)
 				val weeks = match?.groups?.get(1)?.value?.toIntOrNull() ?: 0
-				System.currentTimeMillis() - weeks * 7 * 86400 * 1000
+				System.currentTimeMillis() - weeks * 604_800_000L
 			}
 
 			dateText.contains("year") -> {
 				val match = relativeTimePattern.find(dateText)
 				val years = match?.groups?.get(1)?.value?.toIntOrNull() ?: 0
-				System.currentTimeMillis() - years * 365L * 86400 * 1000
+				System.currentTimeMillis() - years * 31_536_000_000L
 			}
 
 			absoluteTimePattern.matches(dateText) -> {
