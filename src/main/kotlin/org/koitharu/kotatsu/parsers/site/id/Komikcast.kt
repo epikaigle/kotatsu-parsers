@@ -38,7 +38,7 @@ import java.util.Locale
 internal class Komikcast(context: MangaLoaderContext) :
 	PagedMangaParser(context, MangaParserSource.KOMIKCAST, 12) {
 
-	override val configKeyDomain = ConfigKey.Domain("v1.komikcast.fit")
+	override val configKeyDomain = ConfigKey.Domain("v2.komikcast.fit")
 	override val userAgentKey = ConfigKey.UserAgent(UserAgents.KOTATSU)
 	private val apiUrl = "be.komikcast.cc" // simulates API requests similar to web
 
